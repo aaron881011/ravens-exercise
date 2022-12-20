@@ -1,0 +1,19 @@
+start date:2022/12/20
+by:呵呵我是趙子瑜
+note:
+    task:
+        /各個兒子
+        基本上就是繼承原本的然後override(應該說延伸畢竟是用super) 他爸(Task)的 reset（神奇的命名）
+        整個方法都會在reset用完，最後再append goal 的step(應該是算cumulated reward吧吧吧吧吧我說吧，你最知道該不該相信自己)
+        /camera
+        裡面有realsense跟oracle的config（應該是當資料結構用），可以考慮要不要畫
+    
+smells:
+    task/PackingBoxes:
+        class 的 method 裡還有inner class TreeNode跟inner method KDTree
+        pros:防止其他class存取，增加封裝性
+        cons:有點難以閱讀，感覺可以另外寫之後import相關算法
+    task/TowerofHanoi:
+        reset裡面有inner函數solve_hanoi()用遞迴解問題，這感覺就還好
+log:
+    12/20:
