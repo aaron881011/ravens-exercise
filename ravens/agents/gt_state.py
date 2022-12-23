@@ -166,6 +166,11 @@ class GtStateAgent:
     self.model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
+    obs_train_parameters=self.get_train_parameters(dataset)
+
+    self.model.set_normalization_parameters(obs_train_parameters)
+
+  def get_train_parameters(self,dataset):
     sampled_gt_obs = []
 
     num_samples = 1000
@@ -181,7 +186,7 @@ class GtStateAgent:
         np.float32)
     obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
         np.float32)
-    self.model.set_normalization_parameters(obs_train_parameters)
+    return obs_train_parameters
 
   def get_augmentation_transform(self):
     heightmap = np.zeros((320, 160))
@@ -318,14 +323,7 @@ class GtStateAgent:
 
     prediction = self.model(gt_obs[None, Ellipsis])
 
-    if self.use_mdn:
-      mdn_prediction = prediction
-      pi, mu, var = mdn_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      prediction = prediction[:, 0, :]
-
-    prediction = prediction[0]  # unbatch
+    prediction=self.prediction_unbatch(prediction)
 
     # self.plot_act_mdn(gt_act_center[None, ...], mdn_prediction)
 
@@ -358,6 +356,16 @@ class GtStateAgent:
     }
     act['params'] = params
     return act
+
+  def prediction_unbatch(self,prediction):
+    if self.use_mdn:
+      mdn_prediction = prediction
+      pi, mu, var = mdn_prediction
+      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
+      prediction = mdn_utils.sample_from_pdf(pi, mu, var)
+      prediction = prediction[:, 0, :]
+
+    return prediction[0]  # unbatch
 
   #-------------------------------------------------------------------------
   # Helper Functions

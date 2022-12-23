@@ -38,8 +38,9 @@ class GtState2StepAgent(GtStateAgent):
 
     self.pick_optim = tf.keras.optimizers.Adam(learning_rate=2e-4)
     self.place_optim = tf.keras.optimizers.Adam(learning_rate=2e-4)
-    self.metric = tf.keras.metrics.Mean(name='metric')
-    self.val_metric = tf.keras.metrics.Mean(name='val_metric')
+    
+    # self.metric = tf.keras.metrics.Mean(name='metric')
+    # self.val_metric = tf.keras.metrics.Mean(name='val_metric')
 
   def init_model(self, dataset):
     """Initialize models, including normalization parameters."""
@@ -54,21 +55,8 @@ class GtState2StepAgent(GtStateAgent):
     self.pick_model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
-    sampled_gt_obs = []
-
-    num_samples = 1000
-    for _ in range(num_samples):
-      _, _, info = dataset.random_sample()
-      t_worldaug_world, _ = self.get_augmentation_transform()
-      sampled_gt_obs.append(self.info_to_gt_obs(info, t_worldaug_world))
-
-    sampled_gt_obs = np.array(sampled_gt_obs)
-
-    obs_train_parameters = dict()
-    obs_train_parameters['mean'] = sampled_gt_obs.mean(axis=(0)).astype(
-        np.float32)
-    obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
-        np.float32)
+    obs_train_parameters=self.get_train_parameters(dataset)
+    
     self.pick_model.set_normalization_parameters(obs_train_parameters)
 
     # Setup pick-conditioned place model
@@ -77,23 +65,8 @@ class GtState2StepAgent(GtStateAgent):
     self.place_model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
-    sampled_gt_obs = []
+    obs_train_parameters=self.get_train_parameters(dataset)
 
-    num_samples = 1000
-    for _ in range(num_samples):
-      _, act, info = dataset.random_sample()
-      t_worldaug_world, _ = self.get_augmentation_transform()
-      obs = self.info_to_gt_obs(info, t_worldaug_world)
-      obs = np.hstack((obs, self.act_to_gt_act(act, t_worldaug_world)[:3]))
-      sampled_gt_obs.append(obs)
-
-    sampled_gt_obs = np.array(sampled_gt_obs)
-
-    obs_train_parameters = dict()
-    obs_train_parameters['mean'] = sampled_gt_obs.mean(axis=(0)).astype(
-        np.float32)
-    obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
-        np.float32)
     self.place_model.set_normalization_parameters(obs_train_parameters)
 
   def train(self, dataset, num_iter, writer, validation_dataset):
@@ -159,12 +132,8 @@ class GtState2StepAgent(GtStateAgent):
     # Get observations and run pick prediction
     gt_obs = self.info_to_gt_obs(info)
     pick_prediction = self.pick_model(gt_obs[None, Ellipsis])
-    if self.use_mdn:
-      pi, mu, var = pick_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      pick_prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      pick_prediction = pick_prediction[:, 0, :]
-    pick_prediction = pick_prediction[0]  # unbatch
+    
+    pick_prediction=self.prediction_unbatch(pick_prediction)
 
     # Get observations and run place prediction
     obs_with_pick = np.hstack((gt_obs, pick_prediction))
@@ -174,12 +143,9 @@ class GtState2StepAgent(GtStateAgent):
     obs_with_pick[-1] = 0.0
 
     place_prediction = self.place_model(obs_with_pick[None, Ellipsis])
-    if self.use_mdn:
-      pi, mu, var = place_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      place_prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      place_prediction = place_prediction[:, 0, :]
-    place_prediction = place_prediction[0]
+    
+    place_prediction=self.prediction_unbatch(place_prediction)
+
 
     prediction = np.hstack((pick_prediction, place_prediction))
 
@@ -213,23 +179,6 @@ class GtState2StepAgent(GtStateAgent):
     act['params'] = params
     return act
 
-  #-------------------------------------------------------------------------
-  # Helper Functions
-  #-------------------------------------------------------------------------
-
-  def load(self, num_iter):
-    """Load something."""
-
-    # Do something here.
-    # self.model.load(os.path.join(self.models_dir, model_fname))
-    # Update total training iterations of agent.
-    self.total_iter = num_iter
-
-  def save(self):
-    """Save models."""
-    # Do something here.
-    # self.model.save(os.path.join(self.models_dir, model_fname))
-    pass
 
 
 class GtState3Step6DAgent(GtState6DAgent):
@@ -263,21 +212,8 @@ class GtState3Step6DAgent(GtState6DAgent):
     self.pick_model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
-    sampled_gt_obs = []
+    obs_train_parameters=self.get_train_parameters(dataset)
 
-    num_samples = 1000
-    for _ in range(num_samples):
-      _, _, info = dataset.random_sample()
-      t_worldaug_world, _ = self.get_augmentation_transform()
-      sampled_gt_obs.append(self.info_to_gt_obs(info, t_worldaug_world))
-
-    sampled_gt_obs = np.array(sampled_gt_obs)
-
-    obs_train_parameters = dict()
-    obs_train_parameters['mean'] = sampled_gt_obs.mean(axis=(0)).astype(
-        np.float32)
-    obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
-        np.float32)
     self.pick_model.set_normalization_parameters(obs_train_parameters)
 
     # Setup pick-conditioned place se2 model
@@ -286,23 +222,8 @@ class GtState3Step6DAgent(GtState6DAgent):
     self.place_se2_model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
-    sampled_gt_obs = []
-
-    num_samples = 1000
-    for _ in range(num_samples):
-      _, act, info = dataset.random_sample()
-      t_worldaug_world, _ = self.get_augmentation_transform()
-      obs = self.info_to_gt_obs(info, t_worldaug_world)
-      obs = np.hstack((obs, self.act_to_gt_act(act, t_worldaug_world)[:3]))
-      sampled_gt_obs.append(obs)
-
-    sampled_gt_obs = np.array(sampled_gt_obs)
-
-    obs_train_parameters = dict()
-    obs_train_parameters['mean'] = sampled_gt_obs.mean(axis=(0)).astype(
-        np.float32)
-    obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
-        np.float32)
+    obs_train_parameters=self.get_train_parameters(dataset)
+    
     self.place_se2_model.set_normalization_parameters(obs_train_parameters)
 
     # Setup pick-conditioned place rpz model
@@ -311,23 +232,8 @@ class GtState3Step6DAgent(GtState6DAgent):
     self.place_rpz_model = MlpModel(
         self.batch_size, obs_dim, act_dim, 'relu', self.use_mdn, dropout=0.1)
 
-    sampled_gt_obs = []
+    obs_train_parameters=self.get_train_parameters(dataset)
 
-    num_samples = 1000
-    for _ in range(num_samples):
-      _, act, info = dataset.random_sample()
-      t_worldaug_world, _ = self.get_augmentation_transform()
-      obs = self.info_to_gt_obs(info, t_worldaug_world)
-      obs = np.hstack((obs, self.act_to_gt_act(act, t_worldaug_world)[:3]))
-      sampled_gt_obs.append(obs)
-
-    sampled_gt_obs = np.array(sampled_gt_obs)
-
-    obs_train_parameters = dict()
-    obs_train_parameters['mean'] = sampled_gt_obs.mean(axis=(0)).astype(
-        np.float32)
-    obs_train_parameters['std'] = sampled_gt_obs.std(axis=(0)).astype(
-        np.float32)
     self.place_rpz_model.set_normalization_parameters(obs_train_parameters)
 
   def train(self, dataset, num_iter, writer, validation_dataset):
@@ -398,12 +304,8 @@ class GtState3Step6DAgent(GtState6DAgent):
     # Get observations and run pick prediction
     gt_obs = self.info_to_gt_obs(info)
     pick_prediction = self.pick_model(gt_obs[None, Ellipsis])
-    if self.use_mdn:
-      pi, mu, var = pick_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      pick_prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      pick_prediction = pick_prediction[:, 0, :]
-    pick_prediction = pick_prediction[0]  # unbatch
+
+    pick_prediction=self.prediction_unbatch(pick_prediction)
 
     # Get observations and run place prediction
     obs_with_pick = np.hstack((gt_obs, pick_prediction)).astype(np.float32)
@@ -413,12 +315,8 @@ class GtState3Step6DAgent(GtState6DAgent):
     obs_with_pick[-1] = 0.0
 
     place_se2_prediction = self.place_se2_model(obs_with_pick[None, Ellipsis])
-    if self.use_mdn:
-      pi, mu, var = place_se2_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      place_se2_prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      place_se2_prediction = place_se2_prediction[:, 0, :]
-    place_se2_prediction = place_se2_prediction[0]
+    
+    place_se2_prediction=self.prediction_unbatch(place_se2_prediction)
 
     # Get observations and run rpz prediction
     obs_with_pick_place_se2 = np.hstack(
@@ -426,12 +324,7 @@ class GtState3Step6DAgent(GtState6DAgent):
 
     place_rpz_prediction = self.place_rpz_model(obs_with_pick_place_se2[None,
                                                                         Ellipsis])
-    if self.use_mdn:
-      pi, mu, var = place_rpz_prediction
-      # prediction = mdn_utils.pick_max_mean(pi, mu, var)
-      place_rpz_prediction = mdn_utils.sample_from_pdf(pi, mu, var)
-      place_rpz_prediction = place_rpz_prediction[:, 0, :]
-    place_rpz_prediction = place_rpz_prediction[0]
+    place_rpz_prediction=self.prediction_unbatch(place_rpz_prediction)
 
     p0_position = np.hstack((pick_prediction[0:2], 0.02))
     p0_rotation = utils.eulerXYZ_to_quatXYZW((0, 0, 0))
