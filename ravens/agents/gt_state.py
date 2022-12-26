@@ -169,6 +169,19 @@ class GtStateAgent:
     obs_train_parameters=self.get_train_parameters(dataset)
 
     self.model.set_normalization_parameters(obs_train_parameters)
+    return self.get_train_step()
+
+  def get_train_step(self):
+    model=self.model
+    @tf.function
+    def train_step(self,batch_obs, batch_act, loss_criterion):
+      with tf.GradientTape() as tape:
+        prediction = model(batch_obs)
+        loss = loss_criterion(batch_act, prediction)
+        grad = tape.gradient(loss, model.trainable_variables)
+        self.optim.apply_gradients(zip(grad, model.trainable_variables))
+      return loss
+    return train_step
 
   def get_train_parameters(self,dataset):
     sampled_gt_obs = []
@@ -219,35 +232,25 @@ class GtStateAgent:
     batch_act = np.array(batch_act)
     return batch_obs, batch_act, obs, act, info
 
-  def train(self, dataset, num_iter, writer, validation_dataset):
+  def train(self, dataset, num_iter, writer, validation_dataset=None):
     """Train on dataset for a specific number of iterations."""
-
-    if self.model is None:
-      self.init_model(dataset)
 
     if self.use_mdn:
       loss_criterion = mdn_utils.mdn_loss
     else:
       loss_criterion = tf.keras.losses.MeanSquaredError()
 
-    @tf.function
-    def train_step(model, batch_obs, batch_act, loss_criterion):
-      with tf.GradientTape() as tape:
-        prediction = model(batch_obs)
-        loss = loss_criterion(batch_act, prediction)
-        grad = tape.gradient(loss, model.trainable_variables)
-        self.optim.apply_gradients(zip(grad, model.trainable_variables))
-      return loss
+    if self.model is None:
+      train_step=self.init_model(dataset)
 
     print_rate = 100
-    validation_rate = 1000
     for i in range(num_iter):
       start = time.time()
       batch_obs, batch_act, _, _, _ = self.get_data_batch(dataset)
 
       # Forward through model, compute training loss, update weights.
       self.metric.reset_states()
-      loss = train_step(self.model, batch_obs, batch_act, loss_criterion)
+      loss = train_step(self,batch_obs, batch_act, loss_criterion)
       self.metric(loss)
       with writer.as_default():
         tf.summary.scalar(
@@ -260,23 +263,29 @@ class GtStateAgent:
         # utils.meshcat_visualize(self.vis, obs, act, info)
 
       # Compute valid loss
-      if (self.total_iter + i) % validation_rate == 0:
-        print('Validating!')
-        tf.keras.backend.set_learning_phase(0)
-        self.val_metric.reset_states()
-        batch_obs, batch_act, _, _, _ = self.get_data_batch(validation_dataset)
-        prediction = self.model(batch_obs)
-        loss = loss_criterion(batch_act, prediction)
-        self.val_metric(loss)
-        with writer.as_default():
-          tf.summary.scalar(
-              'validation_gt_state_loss',
-              self.val_metric.result(),
-              step=self.total_iter + i)
-        tf.keras.backend.set_learning_phase(1)
+      if validation_dataset is not None:
+        validation_rate = 1000
+        if (self.total_iter + i) % validation_rate == 0:
+          print('Validating!')
+          self.validation(validation_dataset,i,writer,loss_criterion)
+          
 
     self.total_iter += num_iter
     self.save()
+
+  def validation(self,validation_dataset,step,writer,loss_criterion):
+    tf.keras.backend.set_learning_phase(0)
+    self.val_metric.reset_states()
+    batch_obs, batch_act, _, _, _ = self.get_data_batch(validation_dataset)
+    prediction = self.model(batch_obs)
+    loss = loss_criterion(batch_act, prediction)
+    self.val_metric(loss)
+    with writer.as_default():
+      tf.summary.scalar(
+                'validation_gt_state_loss',
+                self.val_metric.result(),
+                step=self.total_iter + step)
+      tf.keras.backend.set_learning_phase(1)
 
   def plot_act_mdn(self, y, mdn_predictions):
     """Plot actions.

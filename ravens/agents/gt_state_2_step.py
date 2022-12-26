@@ -68,20 +68,14 @@ class GtState2StepAgent(GtStateAgent):
     obs_train_parameters=self.get_train_parameters(dataset)
 
     self.place_model.set_normalization_parameters(obs_train_parameters)
+    return self.get_train_step()
 
-  def train(self, dataset, num_iter, writer, validation_dataset):
-    """Train on dataset for a specific number of iterations."""
-
-    if self.pick_model is None:
-      self.init_model(dataset)
-
-    if self.use_mdn:
-      loss_criterion = mdn_utils.mdn_loss
-    else:
-      loss_criterion = tf.keras.losses.MeanSquaredError()
+  def get_train_step(self):
+    pick_model=self.pick_model
+    place_model=self.place_model
 
     @tf.function
-    def train_step(pick_model, place_model, batch_obs, batch_act,
+    def train_step(self, batch_obs, batch_act,
                    loss_criterion):
       with tf.GradientTape() as tape:
         prediction = pick_model(batch_obs)
@@ -100,30 +94,7 @@ class GtState2StepAgent(GtStateAgent):
         self.place_optim.apply_gradients(
             zip(grad, place_model.trainable_variables))
       return loss0 + loss1
-
-    print_rate = 100
-    for i in range(num_iter):
-      start = time.time()
-
-      batch_obs, batch_act, _, _, _ = self.get_data_batch(dataset)
-
-      # Forward through model, compute training loss, update weights.
-      self.metric.reset_states()
-      loss = train_step(self.pick_model, self.place_model, batch_obs, batch_act,
-                        loss_criterion)
-      self.metric(loss)
-      with writer.as_default():
-        tf.summary.scalar(
-            'gt_state_loss', self.metric.result(), step=self.total_iter + i)
-
-      if i % print_rate == 0:
-        loss = np.float32(loss)
-        print(f'Train Iter: {self.total_iter + i} Loss: {loss:.4f} Iter time:',
-              time.time() - start)
-        # utils.meshcat_visualize(self.vis, obs, act, info)
-
-    self.total_iter += num_iter
-    self.save()
+    return train_step
 
   def act(self, obs, info):
     """Run inference and return best action."""
@@ -235,21 +206,15 @@ class GtState3Step6DAgent(GtState6DAgent):
     obs_train_parameters=self.get_train_parameters(dataset)
 
     self.place_rpz_model.set_normalization_parameters(obs_train_parameters)
-
-  def train(self, dataset, num_iter, writer, validation_dataset):
-    """Train on dataset for a specific number of iterations."""
-
-    if self.pick_model is None:
-      self.init_model(dataset)
-
-    if self.use_mdn:
-      loss_criterion = mdn_utils.mdn_loss
-    else:
-      loss_criterion = tf.keras.losses.MeanSquaredError()
+    return self.get_train_step()
+  
+  def get_train_step(self):
+    pick_model=self.pick_model
+    place_se2_model=self.place_se2_model
+    place_rpz_model=self.place_rpz_model
 
     @tf.function
-    def train_step(pick_model, place_se2_model, place_rpz_model, batch_obs,
-                   batch_act, loss_criterion):
+    def train_step(self,batch_obs,batch_act, loss_criterion):
       with tf.GradientTape() as tape:
         prediction = pick_model(batch_obs)
         loss0 = loss_criterion(batch_act[:, 0:3], prediction)
@@ -271,31 +236,7 @@ class GtState3Step6DAgent(GtState6DAgent):
         self.place_rpz_optim.apply_gradients(
             zip(grad, place_rpz_model.trainable_variables))
       return loss0 + loss1 + loss2
-
-    print_rate = 100
-    for i in range(num_iter):
-      start = time.time()
-
-      batch_obs, batch_act, _, _, _ = self.get_data_batch(dataset)
-
-      # Forward through model, compute training loss, update weights.
-      self.metric.reset_states()
-      loss = train_step(self.pick_model, self.place_se2_model,
-                        self.place_rpz_model, batch_obs, batch_act,
-                        loss_criterion)
-      self.metric(loss)
-      with writer.as_default():
-        tf.summary.scalar(
-            'gt_state_loss', self.metric.result(), step=self.total_iter + i)
-
-      if i % print_rate == 0:
-        loss = np.float32(loss)
-        print(f'Train Iter: {self.total_iter + i} Loss: {loss:.4f} Iter time:',
-              time.time() - start)
-        # utils.meshcat_visualize(self.vis, obs, act, info)
-
-    self.total_iter += num_iter
-    self.save()
+    return train_step
 
   def act(self, obs, info):
     """Run inference and return best action."""
