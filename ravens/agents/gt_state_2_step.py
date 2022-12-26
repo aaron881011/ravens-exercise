@@ -75,8 +75,7 @@ class GtState2StepAgent(GtStateAgent):
     place_model=self.place_model
 
     @tf.function
-    def train_step(self, batch_obs, batch_act,
-                   loss_criterion):
+    def train_step(self, batch_obs, batch_act,loss_criterion):
       with tf.GradientTape() as tape:
         prediction = pick_model(batch_obs)
         loss0 = loss_criterion(batch_act[:, 0:3], prediction)
